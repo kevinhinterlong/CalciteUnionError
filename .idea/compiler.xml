@@ -6,10 +6,12 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="CalciteUnionError" />
         <module name="com.hinterlong.kevin.calcite_example" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="CalciteUnionError" target="1.7" />
       <module name="com.hinterlong.kevin.calcite_example" target="1.7" />
     </bytecodeTargetLevel>
   </component>

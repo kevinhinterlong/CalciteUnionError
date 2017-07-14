@@ -17,13 +17,15 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import javax.sql.DataSource;
 
 /**
  * Example of Calcite Union not working
+ *
+ * @see <a href="https://dev.mysql.com/doc/refman/5.7/en/union.html">MYSQL Docs</a>
  */
 public class Example {
     private static final String DATABASE_URL = "jdbc:h2:mem:test";
@@ -34,34 +36,51 @@ public class Example {
         Connection connection = makeDatabase();
         DataSource dataSource = JdbcSchema.dataSource(DATABASE_URL, DRIVER, null, null);
 
-        List<RelNode> unionParts = new ArrayList<>();
-        RelBuilder builder = getBuilder(dataSource, SCHEMA_NAME);
+        System.out.println("WITHOUT  Order by and Limit");
+        RelBuilder firstBuilder = getBuilder(dataSource, SCHEMA_NAME);
+        RelNode firstNormal = fetchWithOrderAndLimit(firstBuilder);
+        RelNode secondNormal = fetchWithOrderAndLimit(firstBuilder);
+        queryManuallyAndWithBuilder(firstBuilder, connection, firstNormal, secondNormal);
 
-        RelNode unionPart1 = fetchValues(builder, 0, 10);
-        unionParts.add(unionPart1);
+        System.out.println("====================================================================");
 
-        RelNode unionPart2 = fetchValues(builder, 10, 20);
-        unionParts.add(unionPart2);
-
-        // manually create union all.
-        String manualSql = "(" + toSql(unionParts.get(0), connection) + ")";
-        manualSql += "\nUNION ALL\n";
-        manualSql += "(" + toSql(unionParts.get(1), connection) + ")";
-        executeSql(connection, manualSql); // SUCCESS!
-
-        // Test calcite union all
-        builder.pushAll(unionParts)
-                .union(true);
-        String generatedSql = toSql(builder.build(), connection);
-        executeSql(connection, generatedSql); // FAILED!
+        System.out.println("WITH Order by and Limit");
+        RelBuilder secondBuilder = getBuilder(dataSource, SCHEMA_NAME);
+        RelNode firstLimit = fetchWithOrderAndLimit(secondBuilder, 0, 10);
+        RelNode secondLimit = fetchWithOrderAndLimit(secondBuilder, 10, 20);
+        queryManuallyAndWithBuilder(secondBuilder, connection, firstLimit, secondLimit);
     }
 
-    private static RelNode fetchValues(RelBuilder builder, int offset, int fetch) {
-        builder.scan("TEST")
-                .project(builder.field("TEST_VALUE"))
-                .sortLimit(offset, fetch, builder.field("TEST_VALUE"));
+    private static void queryManuallyAndWithBuilder(
+            RelBuilder builder,
+            Connection connection,
+            RelNode first,
+            RelNode second
+    ) throws SQLException {
+        // manually create union all.
+        String manualSql = "(" + toSql(second, connection) + ")";
+        manualSql += "\nUNION ALL\n";
+        manualSql += "(" + toSql(first, connection) + ")";
+        executeSql(connection, manualSql);
 
-        return builder.build();
+        // Test calcite union all
+        builder.pushAll(Arrays.asList(first, second))
+                .union(true);
+        String generatedSql = toSql(builder.build(), connection);
+        executeSql(connection, generatedSql);
+    }
+
+    private static RelNode fetchWithOrderAndLimit(RelBuilder builder) {
+        return builder.scan("TEST")
+                .project(builder.field("TEST_VALUE"))
+                .build();
+    }
+
+    private static RelNode fetchWithOrderAndLimit(RelBuilder builder, int offset, int fetch) {
+        return builder.scan("TEST")
+                .project(builder.field("TEST_VALUE"))
+                .sortLimit(offset, fetch, builder.field("TEST_VALUE"))
+                .build();
     }
 
     private static void executeSql(Connection connection, String sql) {
@@ -70,6 +89,7 @@ public class Example {
             System.out.println("SUCCESS!");
         } catch (SQLException e) {
             System.out.println("FAILED! - " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -88,7 +108,7 @@ public class Example {
 
         String insertStatement = "INSERT INTO TEST (TEST_VALUE) VALUES(?)";
 
-        for (int i = 0; i <20; i++) {
+        for (int i = 0; i < 20; i++) {
             PreparedStatement preparedStatement = connection.prepareStatement(insertStatement);
             preparedStatement.setInt(1, i);
             preparedStatement.execute();
